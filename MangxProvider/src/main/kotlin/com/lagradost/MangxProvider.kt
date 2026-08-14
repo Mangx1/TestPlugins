@@ -127,16 +127,18 @@ class MangxProvider : MainAPI() {
 
         val links = mutableSetOf<String>()
 
-        // Cari HLS Videas
         Regex(
             """https?://[^"'\\ ]+\.m3u8[^"'\\ ]*"""
         )
             .findAll(html)
             .forEach {
-                links.add(it.value)
+                links.add(
+                    it.value
+                        .replace("\\/", "/")
+                        .replace("\\u0026", "&")
+                )
             }
 
-        // Cari URL Videas yang mungkin tidak langsung berakhiran .m3u8
         Regex(
             """https?://cdn\.videas\.fr/[^"'\\ ]+"""
         )
@@ -161,10 +163,7 @@ class MangxProvider : MainAPI() {
                     name = "Videas HLS",
                     url = link,
                     type = ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = data
-                    this.quality = Qualities.Unknown.value
-                }
+                )
             )
 
             found = true
