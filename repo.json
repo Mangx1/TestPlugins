@@ -1,8 +1,10 @@
 {
-  "name": "Mangx1 Repository",
-  "description": "Repository plugin CloudStream Mangx1",
+  "name": "Mangx + Phisher Repo",
+  "iconUrl": "https://raw.githubusercontent.com/Mangx1/TestPlugins/main/icon.png",
+  "description": "Gabungan repo Mangx dan Phisher",
   "manifestVersion": 1,
   "pluginLists": [
-    "https://raw.githubusercontent.com/Mangx1/TestPlugins/builds/plugins.json"
+    "https://raw.githubusercontent.com/Mangx1/TestPlugins/main/plugins.json",
+    "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/plugins.json"
   ]
 }
