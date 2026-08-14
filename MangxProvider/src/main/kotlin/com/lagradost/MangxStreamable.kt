@@ -21,22 +21,18 @@ class MangxStreamable : ExtractorApi() {
         referer: String?,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
-    ): List<ExtractorLink>? {
-
+    ) {
         val match = Regex(
             """streamable\.com/(?:e/)?([A-Za-z0-9]+)"""
         ).find(url)
 
-        val id = match?.groupValues?.get(1)
-            ?: return null
+        val id = match?.groupValues?.get(1) ?: return
 
         val apiUrl = "https://api.streamable.com/videos/$id"
 
         val response = app.get(apiUrl)
 
-        if (!response.isSuccessful) {
-            return null
-        }
+        if (!response.isSuccessful) return
 
         val json = response.text
 
@@ -48,11 +44,9 @@ class MangxStreamable : ExtractorApi() {
             ?.replace("\\/", "/")
             ?.replace("\\u0026", "&")
 
-        if (mp4Url.isNullOrBlank()) {
-            return null
-        }
+        if (mp4Url.isNullOrBlank()) return
 
-        return listOf(
+        callback(
             newExtractorLink(
                 source = name,
                 name = name,
