@@ -66,64 +66,67 @@ class MangxProvider : MainAPI() {
                 "User-Agent" to "Mozilla/5.0"
             )).text
 
-            // Cari semua link video
-            val urls = mutableSetOf<String>()
+            val iframeRegex = Regex("""<iframe[^>]+src=["'](https://app\.videas\.fr/embed/media/[^"']+)["']""", RegexOption.IGNORE_CASE)
+            val iframeMatches = iframeRegex.findAll(html).toList()
             
-            // Link langsung .mp4 .m3u8
-            Regex("""https?://[^\s"'<>]+\.(?:m3u8|mp4|m4v)(?:[^\s"'<>]*)?""", RegexOption.IGNORE_CASE)
-                .findAll(html).forEach { urls.add(cleanUrl(it.value)) }
-            
-            // Iframe
-            Regex("""<iframe[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-                .findAll(html).forEach { urls.add(cleanUrl(it.groupValues[1])) }
-            
-            // Data atribut
-            Regex("""(?:data-src|data-video|data-url)=["']([^"']+\.(?:m3u8|mp4|m4v)[^"']*)["']""", RegexOption.IGNORE_CASE)
-                .findAll(html).forEach { urls.add(cleanUrl(it.groupValues[1])) }
-
-            // Proses setiap URL
-            for (url in urls) {
-                if (url.contains(".m3u8") || url.contains(".mp4") || url.contains(".m4v")) {
-                    callback(newExtractorLink(
-                        source = "HooFoot",
-                        name = "Video",
-                        url = url,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = data
-                    })
-                    return true
-                } else {
-                    try {
-                        if (loadExtractor(url, data, subtitleCallback, callback)) {
-                            return true
-                        }
-                    } catch (_: Exception) { }
+            if (iframeMatches.isNotEmpty()) {
+                val iframeUrl = iframeMatches.first().groupValues[1]
+                
+                try {
+                    val success = loadExtractor(iframeUrl, data, subtitleCallback, callback)
+                    if (success) {
+                        return true
+                    }
+                } catch (e: Exception) {
+                }
+                
+                try {
+                    val embedHtml = app.get(iframeUrl, headers = mapOf(
+                        "Referer" to data,
+                        "User-Agent" to "Mozilla/5.0"
+                    )).text
+                    
+                    val videoRegex = Regex("""https?://[^\s"'<>]+\.(?:m3u8|mp4|m4v)(?:[^\s"'<>]*)?""", RegexOption.IGNORE_CASE)
+                    val videoMatches = videoRegex.findAll(embedHtml).toList()
+                    
+                    if (videoMatches.isNotEmpty()) {
+                        val videoUrl = videoMatches.first().value
+                        
+                        callback(newExtractorLink(
+                            source = "HooFoot",
+                            name = "Video",
+                            url = videoUrl,
+                            type = ExtractorLinkType.VIDEO
+                        ) {
+                            this.referer = iframeUrl
+                        })
+                        return true
+                    }
+                } catch (e: Exception) {
                 }
             }
 
-            // Fallback hardcode (ganti link ini dengan yang valid)
-            callback(newExtractorLink(
-                source = "HooFoot",
-                name = "Video",
-                url = "https://cdn.videas.fr/v-medias/s5/hlsv1/4f/dc/4fdcde6d-3a66-424c-b375-f11425a6ba4a/init_480p.mp4",
-                type = ExtractorLinkType.VIDEO
-            ) {
-                this.referer = data
-            })
-            return true
+            val directVideoRegex = Regex("""https?://[^\s"'<>]+\.(?:m3u8|mp4|m4v)(?:[^\s"'<>]*)?""", RegexOption.IGNORE_CASE)
+            val directMatches = directVideoRegex.findAll(html).toList()
+            
+            if (directMatches.isNotEmpty()) {
+                val videoUrl = directMatches.first().value
+                
+                callback(newExtractorLink(
+                    source = "HooFoot",
+                    name = "Video",
+                    url = videoUrl,
+                    type = ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = data
+                })
+                return true
+            }
+
+            return false
 
         } catch (e: Exception) {
             return false
         }
-    }
-
-    private fun cleanUrl(value: String): String {
-        return value
-            .replace("\\/", "/")
-            .replace("\\u0026", "&")
-            .replace("&amp;", "&")
-            .trim()
-            .trim('"', '\'', ' ')
     }
 }
