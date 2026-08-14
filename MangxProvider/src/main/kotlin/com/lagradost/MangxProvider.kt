@@ -438,5 +438,6 @@ class MangxProvider : MainAPI() {
         found = true
     }
 
-    return found
+        return found
     }
+}
