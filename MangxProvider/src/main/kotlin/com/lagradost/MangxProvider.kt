@@ -1,6 +1,7 @@
 package com.lagradost
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -276,62 +277,166 @@ class MangxProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
 
-        val links = linkedSetOf<Pair<String, String>>()
-        val visited = mutableSetOf<String>()
+    val document = try {
+        app.get(
+            data,
+            headers = mapOf(
+                "Referer" to mainUrl,
+                "User-Agent" to "Mozilla/5.0"
+            )
+        ).document
+    } catch (_: Exception) {
+        return false
+    }
 
-        /*
-         * Mulai dari halaman pertandingan.
-         */
-        collectVideoLinks(
-            pageUrl = data,
-            referer = mainUrl,
-            depth = 0,
-            visited = visited,
-            links = links
-        )
+    val playerUrls = linkedSetOf<String>()
 
-        if (links.isEmpty()) {
-            return false
+    /*
+     * Cari iframe player.
+     */
+    document.select("iframe").forEach { iframe ->
+
+        val src = iframe.attr("src").trim()
+
+        if (src.isNotBlank()) {
+            try {
+                val url = fixUrl(src)
+
+                if (
+                    url.startsWith("http://") ||
+                    url.startsWith("https://")
+                ) {
+                    playerUrls.add(url)
+                }
+            } catch (_: Exception) {
+            }
         }
+    }
 
-        var found = false
+    /*
+     * Cari player yang disimpan di data-src/data-url/data-video.
+     */
+    document.select("[data-src], [data-url], [data-video]")
+        .forEach { element ->
 
-        links.forEach { (videoUrl, referer) ->
+            val raw = when {
+                element.hasAttr("data-src") ->
+                    element.attr("data-src")
 
-            val sourceName = when {
-                videoUrl.contains("m3u8", ignoreCase = true) ->
-                    "HooFoot HLS"
-
-                videoUrl.contains(".mp4", ignoreCase = true) ->
-                    "HooFoot MP4"
-
-                videoUrl.contains(".m4v", ignoreCase = true) ->
-                    "HooFoot Video"
+                element.hasAttr("data-url") ->
+                    element.attr("data-url")
 
                 else ->
-                    "HooFoot"
-            }
+                    element.attr("data-video")
+            }.trim()
 
-            callback(
-                newExtractorLink(
-                    source = sourceName,
-                    name = sourceName,
-                    url = videoUrl,
-                    type = ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = referer
+            if (raw.isNotBlank()) {
+                try {
+                    val url = fixUrl(raw)
+
+                    if (
+                        url.startsWith("http://") ||
+                        url.startsWith("https://")
+                    ) {
+                        playerUrls.add(url)
+                    }
+                } catch (_: Exception) {
                 }
-            )
-
-            found = true
+            }
         }
 
-        return found
+    /*
+     * Serahkan setiap player ke extractor bawaan CloudStream.
+     */
+    var found = false
+
+    for (playerUrl in playerUrls) {
+
+        try {
+            val extracted = loadExtractor(
+                playerUrl,
+                data,
+                subtitleCallback,
+                callback
+            )
+
+            if (extracted) {
+                found = true
+            }
+        } catch (_: Exception) {
+        }
     }
-}
+
+    /*
+     * Fallback jika HooFoot memberikan link video langsung.
+     */
+    val html = try {
+        app.get(
+            data,
+            headers = mapOf(
+                "Referer" to mainUrl,
+                "User-Agent" to "Mozilla/5.0"
+            )
+        ).text
+    } catch (_: Exception) {
+        ""
+    }
+
+    val directLinks = linkedSetOf<String>()
+
+    Regex(
+        """https?://[^"'\\\s<>]+(?:\.m3u8|\.mp4|\.m4v)(?:\?[^"'\\\s<>]*)?""",
+        RegexOption.IGNORE_CASE
+    )
+        .findAll(html)
+        .forEach { match ->
+
+            val link = match.value
+                .replace("\\/", "/")
+                .replace("\\u0026", "&")
+                .replace("&amp;", "&")
+                .trim()
+
+            if (
+                link.startsWith("http://") ||
+                link.startsWith("https://")
+            ) {
+                directLinks.add(link)
+            }
+        }
+
+    for (link in directLinks) {
+
+        val sourceName = when {
+            link.contains(".m3u8", ignoreCase = true) ->
+                "HooFoot HLS"
+
+            link.contains(".mp4", ignoreCase = true) ->
+                "HooFoot MP4"
+
+            else ->
+                "HooFoot Video"
+        }
+
+        callback(
+            newExtractorLink(
+                source = sourceName,
+                name = sourceName,
+                url = link,
+                type = ExtractorLinkType.VIDEO
+            ) {
+                this.referer = data
+            }
+        )
+
+        found = true
+    }
+
+    return found
+    }
