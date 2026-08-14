@@ -1,0 +1,43 @@
+[
+    {
+        "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Korduene_Logo.png",
+        "fileHash": "sha256-66ea7484e7dbcc65386a6eec7cceee8cdf1db0de95f30ce13a394baa83c7d7cf",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Mangx1/TestPlugins",
+        "fileSize": 7107,
+        "status": 1,
+        "language": "en",
+        "authors": [
+            "Cloudburst",
+            "Luna712"
+        ],
+        "tvTypes": [
+            "Movie"
+        ],
+        "version": 1,
+        "internalName": "ExampleProvider",
+        "description": "Lorem ipsum",
+        "url": "https://raw.githubusercontent.com/Mangx1/TestPlugins/builds/ExampleProvider.cs3",
+        "name": "ExampleProvider"
+    },
+    {
+        "iconUrl": "https://hoofoot.com/favicon.ico",
+        "fileHash": "sha256-7598bf244d6a172613d7d9c30c11f6ff6dff53084bf01edb9114de6a34d11276",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Mangx1/TestPlugins",
+        "fileSize": 14003,
+        "status": 1,
+        "language": "id",
+        "authors": [
+            "Mangx1"
+        ],
+        "tvTypes": [
+            "Sports"
+        ],
+        "version": 1,
+        "internalName": "MangxProvider",
+        "description": "Mangx Hoofoot",
+        "url": "https://raw.githubusercontent.com/Mangx1/TestPlugins/builds/MangxProvider.cs3",
+        "name": "MangxProvider"
+    }
+]
