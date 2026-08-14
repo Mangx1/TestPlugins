@@ -2,7 +2,7 @@ package com.lagradost
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 
 class MangxProvider : MainAPI() {
 
@@ -123,53 +123,51 @@ class MangxProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
 
-        val document = app.get(data).document
+        val html = app.get(data).text
 
         val links = mutableSetOf<String>()
 
-        document
-            .select(
-                "iframe[src], iframe[data-src], iframe[data-url], embed[src], video[src]"
-            )
-            .forEach { element ->
-
-                listOf(
-                    element.attr("src"),
-                    element.attr("data-src"),
-                    element.attr("data-url")
-                ).forEach { value ->
-
-                    if (value.isNotBlank()) {
-                        links.add(fixUrl(value))
-                    }
-                }
-            }
-
-        // HooFoot sometimes exposes the Streamable URL inside
-        // the raw HTML rather than a normal iframe[src].
+        // Cari HLS Videas
         Regex(
-            """https?://(?:www\.)?streamable\.com/(?:e/)?[A-Za-z0-9]+"""
-        ).findAll(document.html())
+            """https?://[^"'\\ ]+\.m3u8[^"'\\ ]*"""
+        )
+            .findAll(html)
             .forEach {
                 links.add(it.value)
+            }
+
+        // Cari URL Videas yang mungkin tidak langsung berakhiran .m3u8
+        Regex(
+            """https?://cdn\.videas\.fr/[^"'\\ ]+"""
+        )
+            .findAll(html)
+            .forEach {
+                val link = it.value
+                    .replace("\\/", "/")
+                    .replace("\\u0026", "&")
+
+                if (link.contains(".m3u8")) {
+                    links.add(link)
+                }
             }
 
         var found = false
 
         for (link in links) {
 
-            try {
-                loadExtractor(
-                    link,
-                    data,
-                    subtitleCallback,
-                    callback
-                )
+            callback(
+                newExtractorLink(
+                    source = "Videas",
+                    name = "Videas HLS",
+                    url = link,
+                    type = ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = data
+                    this.quality = Qualities.Unknown.value
+                }
+            )
 
-                found = true
-
-            } catch (_: Exception) {
-            }
+            found = true
         }
 
         return found
