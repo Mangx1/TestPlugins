@@ -9,7 +9,7 @@ class MangxProvider : MainAPI() {
 
     override var name = "Mangx Hoofoot"
 
-    override val supportedTypes = setOf(TvType.Sports)
+    override val supportedTypes = setOf(TvType.TvSeries)
 
     override var lang = "id"
 
