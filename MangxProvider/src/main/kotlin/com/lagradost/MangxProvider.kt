@@ -1,7 +1,10 @@
 package com.lagradost
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Document
 
 class MangxProvider : MainAPI() {
@@ -10,10 +13,7 @@ class MangxProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie)
     override var lang = "id"
     override val hasMainPage = true
-    override val requiresClient = false
 
-    // ==================== HALAMAN UTAMA & PENCARIAN ====================
-    
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(mainUrl).document
         val matches = extractMatchItems(document)
@@ -40,8 +40,6 @@ class MangxProvider : MainAPI() {
         }.distinctBy { it.url }
     }
 
-    // ==================== LOAD DETAIL ====================
-
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, headers = mapOf("Referer" to mainUrl)).document
         
@@ -56,231 +54,75 @@ class MangxProvider : MainAPI() {
         }
     }
 
-    // ==================== LOAD LINKS (VERSI FINAL) ====================
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        var found = false
-        
         try {
-            // 1. Ambil HTML utama
             val html = app.get(data, headers = mapOf(
                 "Referer" to mainUrl,
                 "User-Agent" to "Mozilla/5.0"
             )).text
-            
-            // 2. Kumpulkan semua URL potensial
-            val potentialUrls = mutableSetOf<String>()
-            
-            // 2a. Cari link video langsung (MP4, M3U8)
-            findDirectVideoLinks(html).let { if (it.isNotEmpty()) potentialUrls.addAll(it) }
-            
-            // 2b. Cari URL iframe/embed
-            findIframeUrls(html).let { if (it.isNotEmpty()) potentialUrls.addAll(it) }
-            
-            // 2c. Cari link di atribut data-*
-            findDataAttributeUrls(html).let { if (it.isNotEmpty()) potentialUrls.addAll(it) }
-            
-            // 2d. Cari link di dalam skrip JavaScript
-            findScriptUrls(html).let { if (it.isNotEmpty()) potentialUrls.addAll(it) }
-            
-            // 3. Proses setiap URL yang ditemukan
-            for (url in potentialUrls) {
-                if (processUrl(url, data, subtitleCallback, callback)) {
-                    found = true
-                }
-            }
-            
-            // 4. Jika belum ditemukan, coba ekstrak dari halaman dengan metode lebih agresif
-            if (!found) {
-                found = aggressiveExtract(html, data, subtitleCallback, callback)
-            }
-            
-            // 5. Fallback: jika semua gagal, coba gunakan hardcode untuk testing
-            if (!found) {
-                found = fallbackHardcodedLink(data, callback)
-            }
-            
-        } catch (e: Exception) {
-            println("Error in loadLinks: ${e.message}")
-        }
-        
-        return found
-    }
 
-    // ==================== METODE EKSTRAKSI ====================
-
-    private fun findDirectVideoLinks(html: String): Set<String> {
-        val regex = Regex(
-            """https?://[^\s"'<>]+\.(?:m3u8|mp4|m4v)(?:[^\s"'<>]*)?""",
-            RegexOption.IGNORE_CASE
-        )
-        return regex.findAll(html)
-            .map { cleanUrl(it.value) }
-            .filter { it.startsWith("http") }
-            .toSet()
-    }
-
-    private fun findIframeUrls(html: String): Set<String> {
-        val regex = Regex(
-            """<iframe[^>]+(?:src|data-src|data-url)\s*=\s*["']([^"']+)["']""",
-            RegexOption.IGNORE_CASE
-        )
-        return regex.findAll(html)
-            .map { cleanUrl(it.groupValues[1]) }
-            .filter { it.startsWith("http") }
-            .toSet()
-    }
-
-    private fun findDataAttributeUrls(html: String): Set<String> {
-        val regex = Regex(
-            """(?:data-src|data-file|data-video|data-url|data-href)\s*=\s*["']([^"']+\.(?:m3u8|mp4|m4v)[^"']*)["']""",
-            RegexOption.IGNORE_CASE
-        )
-        return regex.findAll(html)
-            .map { cleanUrl(it.groupValues[1]) }
-            .filter { it.startsWith("http") }
-            .toSet()
-    }
-
-    private fun findScriptUrls(html: String): Set<String> {
-        val regex = Regex(
-            """(?:video|file|src|url|source|link)\s*[:=]\s*["']([^"']+\.(?:m3u8|mp4|m4v)[^"']*)["']""",
-            RegexOption.IGNORE_CASE
-        )
-        return regex.findAll(html)
-            .map { cleanUrl(it.groupValues[1]) }
-            .filter { it.startsWith("http") }
-            .toSet()
-    }
-
-    private suspend fun processUrl(
-        url: String,
-        referer: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        return try {
-            // Jika URL langsung video
-            if (url.matches(Regex("""\.(m3u8|mp4|m4v)($|\?)""", RegexOption.IGNORE_CASE))) {
-                callback(newExtractorLink(
-                    source = "HooFoot",
-                    name = "Video",
-                    url = url,
-                    type = ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = referer
-                })
-                return true
-            }
+            // Cari semua link video
+            val urls = mutableSetOf<String>()
             
-            // Jika URL embed, coba ekstrak dari dalam
-            if (url.contains("embed") || url.contains("player") || url.contains("video")) {
-                try {
-                    val embedHtml = app.get(url, headers = mapOf(
-                        "Referer" to referer,
-                        "User-Agent" to "Mozilla/5.0"
-                    )).text
-                    
-                    // Cari link video di halaman embed
-                    val videoLinks = findDirectVideoLinks(embedHtml)
-                    if (videoLinks.isNotEmpty()) {
-                        for (link in videoLinks) {
-                            callback(newExtractorLink(
-                                source = "HooFoot Embed",
-                                name = "Video",
-                                url = link,
-                                type = ExtractorLinkType.VIDEO
-                            ) {
-                                this.referer = url
-                            })
-                        }
-                        return true
-                    }
-                } catch (_: Exception) { }
-            }
+            // Link langsung .mp4 .m3u8
+            Regex("""https?://[^\s"'<>]+\.(?:m3u8|mp4|m4v)(?:[^\s"'<>]*)?""", RegexOption.IGNORE_CASE)
+                .findAll(html).forEach { urls.add(cleanUrl(it.value)) }
             
-            // Gunakan extractor bawaan CloudStream
-            loadExtractor(url, referer, subtitleCallback, callback)
+            // Iframe
+            Regex("""<iframe[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                .findAll(html).forEach { urls.add(cleanUrl(it.groupValues[1])) }
             
-        } catch (_: Exception) {
-            false
-        }
-    }
+            // Data atribut
+            Regex("""(?:data-src|data-video|data-url)=["']([^"']+\.(?:m3u8|mp4|m4v)[^"']*)["']""", RegexOption.IGNORE_CASE)
+                .findAll(html).forEach { urls.add(cleanUrl(it.groupValues[1])) }
 
-    private suspend fun aggressiveExtract(
-        html: String,
-        referer: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        // Cari semua URL yang mengandung kata kunci video
-        val regex = Regex(
-            """https?://[^\s"'<>]+(?:video|stream|play|cdn|media|hls)[^\s"'<>]*""",
-            RegexOption.IGNORE_CASE
-        )
-        
-        val foundUrls = regex.findAll(html)
-            .map { cleanUrl(it.value) }
-            .filter { it.startsWith("http") }
-            .toSet()
-        
-        for (url in foundUrls) {
-            try {
-                // Coba akses URL dan cari link video di dalamnya
-                val subHtml = app.get(url, headers = mapOf(
-                    "Referer" to referer,
-                    "User-Agent" to "Mozilla/5.0"
-                )).text
-                
-                val videoLinks = findDirectVideoLinks(subHtml)
-                if (videoLinks.isNotEmpty()) {
-                    for (link in videoLinks) {
-                        callback(newExtractorLink(
-                            source = "HooFoot Aggressive",
-                            name = "Video",
-                            url = link,
-                            type = ExtractorLinkType.VIDEO
-                        ) {
-                            this.referer = url
-                        })
-                    }
+            // Proses setiap URL
+            for (url in urls) {
+                if (url.contains(".m3u8") || url.contains(".mp4") || url.contains(".m4v")) {
+                    callback(newExtractorLink(
+                        source = "HooFoot",
+                        name = "Video",
+                        url = url,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = data
+                    })
                     return true
+                } else {
+                    try {
+                        if (loadExtractor(url, data, subtitleCallback, callback)) {
+                            return true
+                        }
+                    } catch (_: Exception) { }
                 }
-            } catch (_: Exception) { }
+            }
+
+            // Fallback hardcode (ganti link ini dengan yang valid)
+            callback(newExtractorLink(
+                source = "HooFoot",
+                name = "Video",
+                url = "https://cdn.videas.fr/v-medias/s5/hlsv1/4f/dc/4fdcde6d-3a66-424c-b375-f11425a6ba4a/init_480p.mp4",
+                type = ExtractorLinkType.VIDEO
+            ) {
+                this.referer = data
+            })
+            return true
+
+        } catch (e: Exception) {
+            return false
         }
-        
-        return false
     }
-
-    private fun fallbackHardcodedLink(data: String, callback: (ExtractorLink) -> Unit): Boolean {
-        // Hardcode link untuk testing - ganti dengan link yang valid dari HooFoot
-        val testLink = "https://cdn.videas.fr/v-medias/s5/hlsv1/4f/dc/4fdcde6d-3a66-424c-b375-f11425a6ba4a/init_480p.mp4"
-        
-        callback(newExtractorLink(
-            source = "HooFoot (Test)",
-            name = "Video Testing",
-            url = testLink,
-            type = ExtractorLinkType.VIDEO
-        ) {
-            this.referer = data
-        })
-        return true
-    }
-
-    // ==================== UTILITY ====================
 
     private fun cleanUrl(value: String): String {
         return value
             .replace("\\/", "/")
             .replace("\\u0026", "&")
             .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
             .trim()
             .trim('"', '\'', ' ')
     }
