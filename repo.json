@@ -1,0 +1,8 @@
+{
+  "name": "Mangx1 Repository",
+  "description": "Repository plugin CloudStream Mangx1",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/Mangx1/TestPlugins/builds/plugins.json"
+  ]
+}
