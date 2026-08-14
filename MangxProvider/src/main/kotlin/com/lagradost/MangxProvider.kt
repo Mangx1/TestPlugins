@@ -28,12 +28,11 @@ class MangxProvider : MainAPI() {
             .mapNotNull { element ->
 
                 val href = element.attr("href").trim()
-
-                if (href.isBlank()) return@mapNotNull null
-
                 val title = element.text().trim()
 
-                if (title.isBlank()) return@mapNotNull null
+                if (href.isBlank() || title.isBlank()) {
+                    return@mapNotNull null
+                }
 
                 val poster = element
                     .selectFirst("img")
@@ -50,10 +49,6 @@ class MangxProvider : MainAPI() {
                 }
             }
             .distinctBy { it.url }
-
-        if (matches.isEmpty()) {
-            throw ErrorLoadingException("Tidak menemukan pertandingan HooFoot")
-        }
 
         return newHomePageResponse(
             "Latest Football Highlights",
@@ -103,25 +98,13 @@ class MangxProvider : MainAPI() {
 
         val title =
             document.selectFirst("h1")?.text()?.trim()
-                ?: document
-                    .selectFirst("h2")
-                    ?.text()
-                    ?.trim()
+                ?: document.selectFirst("h2")?.text()?.trim()
                 ?: "HooFoot Match"
 
         val poster =
-            document
-                .selectFirst("img")
+            document.selectFirst("img")
                 ?.attr("src")
                 ?.let { fixUrl(it) }
-
-        val description =
-            document
-                .select("body")
-                .text()
-                .substringAfter("Description")
-                .take(1000)
-                .trim()
 
         return newMovieLoadResponse(
             title,
@@ -130,7 +113,6 @@ class MangxProvider : MainAPI() {
             url
         ) {
             this.posterUrl = poster
-            this.plot = description
         }
     }
 
@@ -143,28 +125,53 @@ class MangxProvider : MainAPI() {
 
         val document = app.get(data).document
 
-        val iframeLinks = document
-            .select("iframe[src]")
-            .mapNotNull {
-                it.attr("src")
-                    .takeIf { src -> src.isNotBlank() }
-                    ?.let { src -> fixUrl(src) }
-            }
-            .distinct()
+        val links = mutableSetOf<String>()
 
-        for (iframe in iframeLinks) {
+        document
+            .select(
+                "iframe[src], iframe[data-src], iframe[data-url], embed[src], video[src]"
+            )
+            .forEach { element ->
+
+                listOf(
+                    element.attr("src"),
+                    element.attr("data-src"),
+                    element.attr("data-url")
+                ).forEach { value ->
+
+                    if (value.isNotBlank()) {
+                        links.add(fixUrl(value))
+                    }
+                }
+            }
+
+        // HooFoot sometimes exposes the Streamable URL inside
+        // the raw HTML rather than a normal iframe[src].
+        Regex(
+            """https?://(?:www\.)?streamable\.com/(?:e/)?[A-Za-z0-9]+"""
+        ).findAll(document.html())
+            .forEach {
+                links.add(it.value)
+            }
+
+        var found = false
+
+        for (link in links) {
+
             try {
                 loadExtractor(
-                    iframe,
+                    link,
                     data,
                     subtitleCallback,
                     callback
                 )
+
+                found = true
+
             } catch (_: Exception) {
-                // Coba iframe berikutnya
             }
         }
 
-        return iframeLinks.isNotEmpty()
+        return found
     }
 }

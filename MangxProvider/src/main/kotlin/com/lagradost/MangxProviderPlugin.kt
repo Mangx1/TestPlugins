@@ -9,5 +9,6 @@ class MangxProviderPlugin : Plugin() {
 
     override fun load(context: Context) {
         registerMainAPI(MangxProvider())
+        registerExtractorAPI(MangxStreamable())
     }
 }
